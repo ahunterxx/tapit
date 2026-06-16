@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Business {
+  id                String   @id @default(uuid())
+  name              String
+  slug              String   @unique
+  logoUrl           String?
+  qrCodeUrl         String?
+  brandColor        String   @default("#000000")
+  planType          String   @default("basic")
+  ownerEmail        String   @unique
+  ownerPasswordHash String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  loyaltyProgram LoyaltyProgram?
+  clients        Client[]
+  visits         Visit[]
+  notifications  Notification[]
+  campaigns      Campaign[]
+}
+
+model LoyaltyProgram {
+  id                String   @id @default(uuid())
+  businessId        String   @unique
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  cardType          CardType @default(STAMP)
+  goalValue         Int      @default(10)
+  rewardDescription String   @default("Free reward")
+  backgroundColor   String   @default("#0a0a0a")
+  foregroundColor   String   @default("#ffffff")
+  labelColor        String   @default("#999999")
+  applePassTypeId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Client {
+  id                 String      @id @default(uuid())
+  businessId         String
+  business           Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name               String
+  phone              String?
+  email              String?
+  deviceType         DeviceType?
+  appleDeviceToken   String?
+  applePassSerial    String?     @unique
+  appleAuthToken     String?
+  googlePassObjectId String?
+  stampsCount        Int         @default(0)
+  pointsBalance      Int         @default(0)
+  currentTier        String?
+  birthday           DateTime?
+  lastVisitAt        DateTime?
+  enrolledAt         DateTime    @default(now())
+
+  visits              Visit[]
+  deviceRegistrations DeviceRegistration[]
+}
+
+model Visit {
+  id          String   @id @default(uuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  timestamp   DateTime @default(now())
+  stampsAdded Int      @default(1)
+  pointsAdded Int      @default(0)
+}
+
+model Notification {
+  id             String             @id @default(uuid())
+  businessId     String
+  business       Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  title          String
+  message        String
+  sentAt         DateTime           @default(now())
+  targetType     NotificationTarget
+  targetClientId String?
+  status         String             @default("sent")
+  sentCount      Int                @default(0)
+}
+
+model Campaign {
+  id          String       @id @default(uuid())
+  businessId  String
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  type        CampaignType
+  triggerDays Int?
+  isActive    Boolean      @default(false)
+  message     String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model DeviceRegistration {
+  id              String   @id @default(uuid())
+  deviceLibraryId String
+  pushToken       String
+  passTypeId      String
+  serialNumber    String
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  @@unique([deviceLibraryId, passTypeId, serialNumber])
+}
+
+enum CardType {
+  STAMP
+  POINTS
+  TIER
+}
+
+enum DeviceType {
+  APPLE
+  GOOGLE
+}
+
+enum NotificationTarget {
+  ALL
+  SEGMENT
+  INDIVIDUAL
+}
+
+enum CampaignType {
+  WIN_BACK
+  BIRTHDAY
+  REWARD_READY
+  CUSTOM
+}

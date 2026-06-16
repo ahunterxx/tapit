@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+.env
+.env.local
+*.p12
+*.p8
+*.pem
+apps/api/certs/
+*.log
+.DS_Store
+.turbo/
