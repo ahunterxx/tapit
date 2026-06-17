@@ -9,22 +9,32 @@ const DEFAULT_LOGO_URL = "https://placehold.co/200x200/0a0a0a/ffffff.png";
 interface ServiceAccountCreds {
   client_email: string;
   private_key: string;
-}
-
-function resolveCredPath(): string {
-  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  if (!credPath) throw new Error("GOOGLE_APPLICATION_CREDENTIALS not set");
-  return path.resolve(credPath);
+  [key: string]: unknown;
 }
 
 function readCreds(): ServiceAccountCreds {
-  const raw = fs.readFileSync(resolveCredPath(), "utf-8");
-  return JSON.parse(raw) as ServiceAccountCreds;
+  // Prefer env var JSON (Railway/production) over file path (local dev)
+  const credsJson = process.env.GOOGLE_WALLET_CREDENTIALS_JSON;
+  if (credsJson) {
+    return JSON.parse(credsJson) as ServiceAccountCreds;
+  }
+  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!credPath) throw new Error("No Google credentials configured");
+  return JSON.parse(fs.readFileSync(path.resolve(credPath), "utf-8")) as ServiceAccountCreds;
 }
 
 function getAuth() {
+  const credsJson = process.env.GOOGLE_WALLET_CREDENTIALS_JSON;
+  if (credsJson) {
+    return new google.auth.GoogleAuth({
+      credentials: JSON.parse(credsJson) as ServiceAccountCreds,
+      scopes: ["https://www.googleapis.com/auth/wallet_object.issuer"],
+    });
+  }
+  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!credPath) throw new Error("No Google credentials configured");
   return new google.auth.GoogleAuth({
-    keyFile: resolveCredPath(),
+    keyFile: path.resolve(credPath),
     scopes: ["https://www.googleapis.com/auth/wallet_object.issuer"],
   });
 }
@@ -229,9 +239,11 @@ export function buildGoogleWalletLink(jwtToken: string): string {
 }
 
 export function isGoogleWalletConfigured(): boolean {
-  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const issuerId = process.env.GOOGLE_WALLET_ISSUER_ID;
-  if (!credPath || !issuerId) return false;
+  if (!issuerId) return false;
+  if (process.env.GOOGLE_WALLET_CREDENTIALS_JSON) return true;
+  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!credPath) return false;
   try {
     fs.accessSync(path.resolve(credPath));
     return true;
