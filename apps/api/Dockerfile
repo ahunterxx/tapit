@@ -1,5 +1,7 @@
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 # Install deps at root (npm workspaces)
 COPY package.json package-lock.json ./
@@ -15,8 +17,10 @@ RUN npx prisma generate --schema=./apps/api/prisma/schema.prisma
 # Build TypeScript
 RUN npm run build --workspace=apps/api
 
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 
