@@ -35,10 +35,7 @@ export default function ClientDetailPage() {
 
   async function loadClient() {
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/dashboard/clients/${id}`,
-        { credentials: "include" }
-      );
+      const res = await fetch(`/api/proxy/dashboard/clients/${id}`);
       if (res.status === 401) { router.push("/login"); return; }
       const data = await res.json();
       setClient(data);
@@ -56,10 +53,11 @@ export default function ClientDetailPage() {
     setStamping(true);
     setMessage("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/dashboard/clients/${id}/stamp`,
-        { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count: 1 }) }
-      );
+      const res = await fetch(`/api/proxy/dashboard/clients/${id}/stamp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: 1 }),
+      });
       const data = await res.json();
       setMessage(data.message);
       await loadClient();
@@ -72,10 +70,9 @@ export default function ClientDetailPage() {
 
   async function redeemReward() {
     if (!client) return;
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/dashboard/clients/${id}/redeem`,
-      { method: "POST", credentials: "include" }
-    );
+    const res = await fetch(`/api/proxy/dashboard/clients/${id}/redeem`, {
+      method: "POST",
+    });
     const data = await res.json();
     setMessage(data.message);
     await loadClient();

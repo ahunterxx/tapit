@@ -76,9 +76,8 @@ export default function CardDesignPage() {
   const [saved, setSaved] = useState(false);
 
   async function load() {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/program`, {
-      credentials: "include",
-    });
+    const res = await fetch(`/api/proxy/dashboard/program`);
+    if (!res.ok) return;
     const d: ProgramData = await res.json();
     setData(d);
     if (d.program) {
@@ -94,9 +93,8 @@ export default function CardDesignPage() {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/program`, {
+    await fetch(`/api/proxy/dashboard/program`, {
       method: "PUT",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ goalValue, rewardDescription: reward, backgroundColor: bgColor, foregroundColor: fgColor }),
     });

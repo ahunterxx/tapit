@@ -27,9 +27,7 @@ export default function CampaignsPage() {
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/campaigns`, {
-      credentials: "include",
-    });
+    const res = await fetch(`/api/proxy/dashboard/campaigns`);
     const data = await res.json();
     setCampaigns(data);
   }
@@ -37,18 +35,14 @@ export default function CampaignsPage() {
   useEffect(() => { load(); }, []);
 
   async function toggle(id: string) {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/campaigns/${id}/toggle`, {
-      method: "PATCH",
-      credentials: "include",
-    });
+    await fetch(`/api/proxy/dashboard/campaigns/${id}/toggle`, { method: "PATCH" });
     load();
   }
 
   async function saveMessage(id: string) {
     setSaving(true);
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/campaigns/${id}`, {
+    await fetch(`/api/proxy/dashboard/campaigns/${id}`, {
       method: "PUT",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: editMsg }),
     });

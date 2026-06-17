@@ -25,9 +25,7 @@ export default function NotificationsPage() {
 
   async function loadHistory() {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/notifications`, {
-        credentials: "include",
-      });
+      const res = await fetch(`/api/proxy/dashboard/notifications`);
       const data = await res.json();
       setHistory(data.notifications ?? []);
     } catch {}
@@ -40,9 +38,8 @@ export default function NotificationsPage() {
     setSending(true);
     setResult("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/notifications/send`, {
+      const res = await fetch(`/api/proxy/dashboard/notifications/send`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, message, targetType: "ALL" }),
       });

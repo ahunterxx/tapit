@@ -59,10 +59,7 @@ export function Sidebar() {
           <button
             type="button"
             onClick={async () => {
-              await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/logout`, {
-                method: "POST",
-                credentials: "include",
-              });
+              await fetch(`/api/proxy/auth/logout`, { method: "POST" });
               window.location.href = "/login";
             }}
             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors w-full text-left"
