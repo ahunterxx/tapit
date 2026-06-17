@@ -20,20 +20,8 @@ import { startCampaignWorker } from "./jobs/worker";
 const app = Fastify({ logger: true });
 
 async function start() {
-  const allowedOrigins = [
-    process.env.WEB_URL ?? "http://localhost:3000",
-    "http://localhost:3000",
-    "http://localhost:3001",
-  ].filter(Boolean);
-
   await app.register(cors, {
-    origin: (origin, cb) => {
-      if (!origin || allowedOrigins.some((o) => origin.startsWith(o))) {
-        cb(null, true);
-      } else {
-        cb(new Error(`CORS: origin ${origin} not allowed`), false);
-      }
-    },
+    origin: true,
     credentials: true,
   });
 
