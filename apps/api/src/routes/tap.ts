@@ -235,6 +235,61 @@ export async function tapRoutes(app: FastifyInstance) {
     return reply.send(client);
   });
 
+  // POST /tap/:slug/stamp-by-id — instant stamp for returning customers using stored clientId
+  app.post("/:slug/stamp-by-id", rateLimitConfig, async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    const { clientId } = req.body as { clientId?: string };
+
+    if (!clientId) return reply.code(400).send({ error: "clientId required" });
+
+    const business = await prisma.business.findUnique({
+      where: { slug, isActive: true },
+      include: { loyaltyProgram: true },
+    });
+    if (!business || !business.loyaltyProgram) {
+      return reply.code(404).send({ error: "Business not found" });
+    }
+
+    const client = await prisma.client.findFirst({
+      where: { id: clientId, businessId: business.id },
+    });
+    if (!client) return reply.code(404).send({ error: "Client not found" });
+
+    const program = business.loyaltyProgram;
+    const newCount = client.stampsCount + 1;
+
+    await prisma.client.update({
+      where: { id: client.id },
+      data: { stampsCount: newCount, lastVisitAt: new Date() },
+    });
+    await prisma.visit.create({
+      data: { clientId: client.id, businessId: business.id, stampsAdded: 1 },
+    });
+
+    if (client.googlePassObjectId) {
+      try {
+        await updateLoyaltyObject({
+          objectId: client.googlePassObjectId,
+          stampsCount: newCount,
+          goalValue: program.goalValue,
+          rewardDescription: program.rewardDescription,
+          clientName: client.name,
+        });
+      } catch (err) {
+        console.error("[StampById] Google Wallet update failed:", err instanceof Error ? err.message : err);
+      }
+    }
+
+    return reply.send({
+      status: newCount >= program.goalValue ? "reward_ready" : "stamped",
+      clientId: client.id,
+      clientName: client.name,
+      stampsCount: newCount,
+      goalValue: program.goalValue,
+      rewardDescription: program.rewardDescription,
+    });
+  });
+
   // POST /tap/:slug/checkin — automatic stamp on QR/NFC scan
   // Phone is required (used as customer identifier).
   // Returns status: "stamped" | "enrolled" | "needs_name" | "already_stamped" | "reward_ready"
@@ -260,19 +315,6 @@ export async function tapRoutes(app: FastifyInstance) {
     });
 
     if (existing) {
-      // 4-hour cooldown prevents scanning multiple times in one visit
-      const COOLDOWN_MS = 4 * 60 * 60 * 1000;
-      if (existing.lastVisitAt && Date.now() - existing.lastVisitAt.getTime() < COOLDOWN_MS) {
-        const nextAt = new Date(existing.lastVisitAt.getTime() + COOLDOWN_MS);
-        return reply.send({
-          status: "already_stamped",
-          clientName: existing.name,
-          stampsCount: existing.stampsCount,
-          goalValue: program.goalValue,
-          nextStampAt: nextAt.toISOString(),
-        });
-      }
-
       const newCount = existing.stampsCount + 1;
       await prisma.client.update({
         where: { id: existing.id },
@@ -300,6 +342,7 @@ export async function tapRoutes(app: FastifyInstance) {
       const rewardReady = newCount >= program.goalValue;
       return reply.send({
         status: rewardReady ? "reward_ready" : "stamped",
+        clientId: existing.id,
         clientName: existing.name,
         stampsCount: newCount,
         goalValue: program.goalValue,
