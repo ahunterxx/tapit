@@ -8,7 +8,6 @@ RUN npm ci --workspace=apps/api --include-workspace-root
 
 # Copy source
 COPY apps/api ./apps/api
-COPY packages ./packages
 
 # Generate Prisma client
 RUN npx prisma generate --schema=./apps/api/prisma/schema.prisma
