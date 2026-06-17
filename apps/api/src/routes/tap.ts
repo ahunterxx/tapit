@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma";
 import {
   createOrUpdateLoyaltyClass,
   createLoyaltyObject,
+  updateLoyaltyObject,
   generateGoogleWalletJwt,
   buildGoogleWalletLink,
   isGoogleWalletConfigured,
@@ -15,6 +16,12 @@ const enrollSchema = z.object({
   name: z.string().min(1).max(100),
   phone: z.string().optional(),
   deviceType: z.enum(["APPLE", "GOOGLE"]),
+});
+
+const checkinSchema = z.object({
+  phone: z.string().min(6).max(20),
+  name: z.string().min(1).max(100).optional(),
+  deviceType: z.enum(["APPLE", "GOOGLE", "NONE"]).default("NONE"),
 });
 
 export async function tapRoutes(app: FastifyInstance) {
@@ -226,5 +233,165 @@ export async function tapRoutes(app: FastifyInstance) {
 
     if (!client) return reply.code(404).send({ error: "Client not found" });
     return reply.send(client);
+  });
+
+  // POST /tap/:slug/checkin — automatic stamp on QR/NFC scan
+  // Phone is required (used as customer identifier).
+  // Returns status: "stamped" | "enrolled" | "needs_name" | "already_stamped" | "reward_ready"
+  app.post("/:slug/checkin", rateLimitConfig, async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+
+    const body = checkinSchema.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "Invalid input" });
+    const { phone, name, deviceType } = body.data;
+
+    const business = await prisma.business.findUnique({
+      where: { slug, isActive: true },
+      include: { loyaltyProgram: true },
+    });
+    if (!business || !business.loyaltyProgram) {
+      return reply.code(404).send({ error: "Business not found" });
+    }
+    const program = business.loyaltyProgram;
+
+    // --- Returning customer ---
+    const existing = await prisma.client.findFirst({
+      where: { businessId: business.id, phone },
+    });
+
+    if (existing) {
+      // 4-hour cooldown prevents scanning multiple times in one visit
+      const COOLDOWN_MS = 4 * 60 * 60 * 1000;
+      if (existing.lastVisitAt && Date.now() - existing.lastVisitAt.getTime() < COOLDOWN_MS) {
+        const nextAt = new Date(existing.lastVisitAt.getTime() + COOLDOWN_MS);
+        return reply.send({
+          status: "already_stamped",
+          clientName: existing.name,
+          stampsCount: existing.stampsCount,
+          goalValue: program.goalValue,
+          nextStampAt: nextAt.toISOString(),
+        });
+      }
+
+      const newCount = existing.stampsCount + 1;
+      await prisma.client.update({
+        where: { id: existing.id },
+        data: { stampsCount: newCount, lastVisitAt: new Date() },
+      });
+      await prisma.visit.create({
+        data: { clientId: existing.id, businessId: business.id, stampsAdded: 1 },
+      });
+
+      // Update Google Wallet card in real time
+      if (existing.googlePassObjectId) {
+        try {
+          await updateLoyaltyObject({
+            objectId: existing.googlePassObjectId,
+            stampsCount: newCount,
+            goalValue: program.goalValue,
+            rewardDescription: program.rewardDescription,
+            clientName: existing.name,
+          });
+        } catch (err) {
+          console.error("[Checkin] Google Wallet update failed:", err instanceof Error ? err.message : err);
+        }
+      }
+
+      const rewardReady = newCount >= program.goalValue;
+      return reply.send({
+        status: rewardReady ? "reward_ready" : "stamped",
+        clientName: existing.name,
+        stampsCount: newCount,
+        goalValue: program.goalValue,
+        rewardDescription: program.rewardDescription,
+      });
+    }
+
+    // --- New customer — need name first ---
+    if (!name) {
+      return reply.send({ status: "needs_name" });
+    }
+
+    // Enroll with first stamp already applied
+    const clientId = uuidv4();
+    const applePassSerial = uuidv4();
+    const appleAuthToken = generateAuthToken();
+    let googlePassObjectId: string | null = null;
+    let googleWalletLink: string | null = null;
+    let applePassUrl: string | null = null;
+
+    if (deviceType === "GOOGLE" && isGoogleWalletConfigured()) {
+      try {
+        await createOrUpdateLoyaltyClass({
+          businessSlug: business.slug,
+          businessName: business.name,
+          rewardDescription: program.rewardDescription,
+          logoUrl: business.logoUrl ?? undefined,
+          backgroundColor: program.backgroundColor,
+        });
+        googlePassObjectId = await createLoyaltyObject({
+          businessSlug: business.slug,
+          businessName: business.name,
+          clientId,
+          clientName: name,
+          stampsCount: 1,
+          goalValue: program.goalValue,
+          rewardDescription: program.rewardDescription,
+          enrolledAt: new Date(),
+        });
+        const jwtToken = generateGoogleWalletJwt({ businessSlug: business.slug, clientId });
+        googleWalletLink = buildGoogleWalletLink(jwtToken);
+      } catch (err) {
+        console.error("[Checkin] Google Wallet setup failed:", err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (deviceType === "APPLE" && isAppleConfigured()) {
+      const passBuffer = await generatePass({
+        serialNumber: applePassSerial,
+        authToken: appleAuthToken,
+        businessName: business.name,
+        clientName: name,
+        stampsCount: 1,
+        goalValue: program.goalValue,
+        rewardDescription: program.rewardDescription,
+        backgroundColor: program.backgroundColor,
+        foregroundColor: program.foregroundColor ?? "#ffffff",
+        labelColor: program.labelColor ?? "#ffffff",
+      });
+      if (passBuffer) {
+        applePassUrl = `${process.env.BASE_URL}/passes/download/${clientId}`;
+      }
+    }
+
+    const client = await prisma.client.create({
+      data: {
+        id: clientId,
+        businessId: business.id,
+        name,
+        phone,
+        deviceType: deviceType === "NONE" ? null : deviceType,
+        applePassSerial,
+        appleAuthToken,
+        googlePassObjectId,
+        stampsCount: 1,
+        lastVisitAt: new Date(),
+        enrolledAt: new Date(),
+      },
+    });
+    await prisma.visit.create({
+      data: { clientId: client.id, businessId: business.id, stampsAdded: 1 },
+    });
+
+    return reply.code(201).send({
+      status: "enrolled",
+      clientId: client.id,
+      clientName: name,
+      stampsCount: 1,
+      goalValue: program.goalValue,
+      rewardDescription: program.rewardDescription,
+      googleWalletLink,
+      applePassUrl,
+    });
   });
 }
