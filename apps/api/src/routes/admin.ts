@@ -21,6 +21,7 @@ export async function adminRoutes(app: FastifyInstance) {
     "/businesses",
     { preHandler: [requireAdmin] },
     async (req, reply) => {
+      try {
       const body = createBusinessSchema.safeParse(req.body);
       if (!body.success) {
         return reply.code(400).send({ error: "Invalid input", issues: body.error.issues });
@@ -39,8 +40,13 @@ export async function adminRoutes(app: FastifyInstance) {
       const ownerPasswordHash = await bcrypt.hash(ownerPassword, 12);
       const tapUrl = `${process.env.WEB_URL ?? "http://localhost:3000"}/tap/${slug}`;
 
-      const qrBuffer = await generateQRCodeBuffer(tapUrl);
-      const qrUrl = await uploadFile("qrcodes", `${slug}/qr.png`, qrBuffer, "image/png");
+      let qrUrl: string | null = null;
+      try {
+        const qrBuffer = await generateQRCodeBuffer(tapUrl);
+        qrUrl = await uploadFile("qrcodes", `${slug}/qr.png`, qrBuffer, "image/png");
+      } catch (err) {
+        console.error("[Admin] QR generation/upload failed:", err instanceof Error ? err.message : err);
+      }
 
       const business = await prisma.business.create({
         data: {
@@ -82,6 +88,11 @@ export async function adminRoutes(app: FastifyInstance) {
         },
         loyaltyProgram: business.loyaltyProgram,
       });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[Admin] createBusiness error:", msg);
+        return reply.code(500).send({ error: "Internal Server Error", detail: msg });
+      }
     }
   );
 
