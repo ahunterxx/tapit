@@ -14,12 +14,26 @@ import { notificationsRoutes } from "./routes/dashboard/notifications";
 import { programRoutes } from "./routes/dashboard/program";
 import { campaignsRoutes } from "./routes/dashboard/campaigns";
 import { overviewRoutes } from "./routes/dashboard/overview";
+import { internalRoutes } from "./routes/internal";
+import { startCampaignWorker } from "./jobs/worker";
 
 const app = Fastify({ logger: true });
 
 async function start() {
+  const allowedOrigins = [
+    process.env.WEB_URL ?? "http://localhost:3000",
+    "http://localhost:3000",
+    "http://localhost:3001",
+  ].filter(Boolean);
+
   await app.register(cors, {
-    origin: process.env.WEB_URL ?? "http://localhost:3000",
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.some((o) => origin.startsWith(o))) {
+        cb(null, true);
+      } else {
+        cb(new Error(`CORS: origin ${origin} not allowed`), false);
+      }
+    },
     credentials: true,
   });
 
@@ -46,6 +60,9 @@ async function start() {
   await app.register(notificationsRoutes, { prefix: "/dashboard/notifications" });
   await app.register(programRoutes, { prefix: "/dashboard/program" });
   await app.register(campaignsRoutes, { prefix: "/dashboard/campaigns" });
+  await app.register(internalRoutes, { prefix: "/internal" });
+
+  startCampaignWorker();
 
   const port = Number(process.env.PORT ?? 3001);
   await app.listen({ port, host: "0.0.0.0" });

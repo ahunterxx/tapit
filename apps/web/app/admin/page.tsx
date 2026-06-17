@@ -53,14 +53,18 @@ export default function AdminPage() {
   async function verify(s: string) {
     setLoading(true);
     setError("");
-    const res = await fetch(`${API}/admin/businesses`, { headers: adminHeaders(s) });
-    if (res.ok) {
-      const data: Business[] = await res.json();
-      setSecret(s);
-      setAuthed(true);
-      setBusinesses(data);
-    } else {
-      setError("Wrong admin secret.");
+    try {
+      const res = await fetch(`${API}/admin/businesses`, { headers: adminHeaders(s) });
+      if (res.ok) {
+        const data: Business[] = await res.json();
+        setSecret(s);
+        setAuthed(true);
+        setBusinesses(data);
+      } else {
+        setError("Wrong admin secret.");
+      }
+    } catch (err) {
+      setError(`Network error: cannot reach API at ${API}. Check NEXT_PUBLIC_API_URL.`);
     }
     setLoading(false);
   }
