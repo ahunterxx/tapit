@@ -31,15 +31,20 @@ export async function uploadFile(
     return `/uploads/${bucket}/${path.basename(filePath)}`;
   }
 
-  const { error } = await client.storage
-    .from(bucket)
-    .upload(filePath, buffer, { contentType, upsert: true });
+  try {
+    const { error } = await client.storage
+      .from(bucket)
+      .upload(filePath, buffer, { contentType, upsert: true });
 
-  if (error) {
-    console.error("Supabase upload error:", error);
+    if (error) {
+      console.error("Supabase upload error:", error.message);
+      return null;
+    }
+
+    const { data } = client.storage.from(bucket).getPublicUrl(filePath);
+    return data.publicUrl;
+  } catch (err) {
+    console.error("Supabase upload exception:", err instanceof Error ? err.message : err);
     return null;
   }
-
-  const { data } = client.storage.from(bucket).getPublicUrl(filePath);
-  return data.publicUrl;
 }
